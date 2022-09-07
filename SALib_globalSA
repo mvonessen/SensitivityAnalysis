@@ -1,4 +1,4 @@
-# FOLLOWING STEPS FROM THE PYNETLOGO DOCUMENTATION
+# FOLLOWING STEPS FROM THE PYNETLOGO DOCUMENTATION: https://pynetlogo.readthedocs.io/en/latest/_docs/SALib_ipyparallel.html 
 # STEP 1: NetLogo interaction through the pyNetLogo connector
 
 from __future__ import division, print_function
