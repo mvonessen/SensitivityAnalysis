@@ -1,0 +1,107 @@
+# FOLLOWING STEPS FROM THE PYNETLOGO DOCUMENTATION
+# STEP 1: NetLogo interaction through the pyNetLogo connector
+
+from __future__ import division, print_function
+try:
+    from itertools import izip as zip
+except ImportError:
+    pass
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import numpy as np
+from numpy import genfromtxt
+import pyNetLogo
+import SALib 
+import scipy
+from SALib.sample import saltelli
+from SALib.analyze import sobol
+import os
+import jpype
+import xlrd
+sns.set_style('white')
+sns.set_context('talk')
+
+### Defining the 'problem'
+problem = {
+  'num_vars': 15,
+  'names': ['NGO-reporting-threshold',
+            'pioneer-lobbying-threshold',
+            'mainstreamer-lobbying-threshold',
+            'encroachment-detection-rate',
+            'fine-for-tier-1-encroachment',
+            'fine-for-tier-2-encroachment',
+            'P-reputation-weight',
+            'M-reputation-weight',
+            'L-reputation-weight',
+            'Government-action-cadence',
+            'conservation-goal', 
+            'government-proactive',
+            'government-pro-business',
+            'government-pro-environment',
+            'Intervention-timing',
+            ],
+    'bounds': [[0.3, 1.5],
+               [0.06, 1.],
+               [0.05, 1.],
+               [0., 1.],
+               [0.1, 1.],
+               [0.1, 1.],
+               [0.02, 1.],
+               [0.01, 1.],
+               [0.005, 1.],
+               [2., 6.],
+               [0., 100.],
+               [0., 1.],
+               [0., 2.],
+               [0., 2.],
+               [0., 160.],
+              ]
+}
+### Setting the number of runs, using a csv file created separately which lists all parameter values for all 14,336 experiments (resulting from n=1024)
+param_values = genfromtxt('~/n-1024_parameters_V2.csv', delimiter=',')
+
+# To start the virtual engines, use ipcluster start -n # on a command line on the computing node (e.g., SecureCRT)
+import ipyparallel 
+
+client = ipyparallel.Client()
+client.ids                     # to check if the engines were started and recognized correctly
+direct_view = client[:]
+
+# Push the current working directory of the notebook to a "cwd" variable on the engines that can be accessed later
+direct_view.push(dict(cwd=os.getcwd()))
+direct_view.push(dict(problem=problem))
+# Desired output according to the documentation: <AsyncResult: _push>
+
+### Starting NetLogo on the cluster
+%%px
+
+import os
+os.chdir(cwd)
+
+import pyNetLogo
+import pandas as pd
+
+netlogo = pyNetLogo.NetLogoLink(gui=False, netlogo_home='~/NetLogo-6.2.0', netlogo_version='6.1', jvm_home='~/java/11.0.11/lib/server/libjvm.so')
+netlogo.load_model('~/ABSOLUG_V3.4.nlogo')
+
+### Defining the 'experiment' for NetLogo
+def simulation(experiment):
+
+    #Set the input parameters
+    for i, name in enumerate(problem['names']):
+            netlogo.command('set {0} {1}'.format(name, experiment[i]))
+
+    netlogo.command('setup')               # setting up the model
+    netlogo.command('repeat 160 [go]')     # running it for 160 ticks
+    
+    results = pd.Series([netlogo.report('forest-extent')],  #
+                     index=['Forest extent'])
+    return results
+    
+lview = client.load_balanced_view()
+
+# Starting the actual run of the multiple NetLogo instances
+results = pd.DataFrame(lview.map_sync(simulation, param_values))
+results.to_csv('~/GSA_V2_n1024.csv')
